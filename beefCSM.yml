@@ -1,0 +1,5 @@
+name: beefCSM
+channels:
+- defaults
+prefix: /home/ardave/.conda/envs/beefCSM
+
