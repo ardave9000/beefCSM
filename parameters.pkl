@@ -1,0 +1,37 @@
+(dp0
+S'water'
+p1
+(dp2
+S'number density'
+p3
+F55.34
+sS'dielectric constant'
+p4
+F78.36
+sS'u0 (eV)'
+p5
+F0.18
+sS'name'
+p6
+g1
+sS'gamma (dyne/cm)'
+p7
+F0.0184
+ssS'dmso'
+p8
+(dp9
+S'number density'
+p10
+F14.08
+sS'dielectric constant'
+p11
+F47.2
+sS'u0 (eV)'
+p12
+F0.2
+sg6
+g8
+sS'gamma (dyne/cm)'
+p13
+F0.0088
+ss.
