@@ -10,6 +10,7 @@ import ase.io
 import ase.visualize
 import pickle
 import datetime
+import os
 import sys
 import math
 from gpaw.xc.vdw import VDWFunctional
@@ -26,8 +27,8 @@ if len(sys.argv)!=5:
 else:
     sv = sys.argv[1]
     s = sys.argv[2]
-    h = sys.argv[3]
-    v = sys.argv[4]
+    h = float(sys.argv[3])
+    vac = float(sys.argv[4])
     sv.strip()
     s.strip()
     charge_str = s[-1]
@@ -39,31 +40,26 @@ else:
 
 now = datetime.datetime
 timestamp = now.now().strftime('%Y%-m%-d%-I%-M%-S')
-shell = ase.io.read("~/xyz/{}4x.xyz".format(sv))
-solvent = ase.io.read("~/xyz/{}.xyz".format(sv))
-solventparams = pickle.load(open("~/beefCSM/parameters.pkl","r"))
+pydir = os.path.dirname(os.path.abspath(__file__))
+pj = os.path.join
+shell = ase.io.read(pj(pydir,"xyz/{}4x.xyz".format(sv)))
+solvent = ase.io.read(pj(pydir,"xyz/{}.xyz".format(sv)))
+solventparams = pickle.load(open(pj(pydir,"parameters.pkl"),"r"))
 
-parprint("completed")
-'''
 #Solvent parameters for DMSO (J. Chem. Phys. 141, 174108 (2014))
-sv = 'dmso'
-nd = 14.08
-R = 8.6173303e-5
-u0 = 0.20 #eV
-epsinf = 47.2 #dielectric constant
-gamma = 8.8*1e-3*Pascal*m #conversion from dyne/cm to eV/Angstrom**2
+params = solventparams[sv]
+name,nd,u0,gamma,epsinf = params['name'],params['number density'],params['u0 (eV)'],params['gamma (dyne/cm)'],params['dielectric constant']
+gamma = gamma*Pascal*m
 T = 298.15 #Kelvin
 vdw_radii = vdw_radii.copy()
 vdw_radii[1] = 1.09
 atomic_radii = lambda atoms: [vdw_radii[n] for n in atoms.numbers] #create callable for GPAW calculator
-
-#All parameters in ASE unit conventions (eV, Angstrom...)
 #DFT calculation parameters
-h = 0.15
-vac = 6
 xc = 'PBE'
 beef = 'BEEF-vdW'
+cell = vac*np.array([1,1,1])
 
+parprint('completed')
 #Each calculation will be converged with PBE, then, using same calculator, be run with BEEF.
 #This enables the PBE WFs to be used as initial guesses for BEEF convergence, hopefully enabling large box sizes.
 
@@ -72,8 +68,9 @@ beef = 'BEEF-vdW'
 output = {}
 
 #Perform solvent-only (gas phase) calculation
-solvent.center(vacuum=vac) #set box size
-calc = GPAW(xc=xc, txt='{}_{}_gas_{}.txt'.format(s,sv,timestamp),gpts=h2gpts(h, solvent.get_cell(), idiv=16))
+solvent.set_cell(cell)
+solvent.center() #set box size
+calc = GPAW(xc=xc,gpts=h2gpts(h, solvent.get_cell(), idiv=16))
 solvent.calc = calc
 solvent.get_potential_energy() #converge WFs with PBE
 
@@ -83,9 +80,10 @@ E_sv = solvent.get_potential_energy() #BEEF best fit energy
 ense = BEEFEnsemble(calc)
 dE_sv = ense.get_ensemble_energies() #N=2000 non-self-consist calculation to generate uncertainty spread
 
+
 #Perform solvent-only (solvated phase) calculation
 scalc = SolvationGPAW(
-        xc=xc, txt='{}_{}_solvated_{}.txt'.format(s,sv,timestamp),
+        xc=xc,
         gpts=h2gpts(h, solvent.get_cell(), idiv=16),
         cavity=EffectivePotentialCavity(
             effective_potential=Power12Potential(atomic_radii,u0),
@@ -102,11 +100,13 @@ E_sv_sol = solvent.get_potential_energy()
 ense = BEEFEnsemble(scalc)
 dE_sv_sol = ense.get_ensemble_energies() 
 
+'''
 #Perform single-ion (gas phase) calculation
 ion = Atoms(sym)
 calc.set(xc=xc,charge = charge)
 ion.calc = calc
-ion.center(vacuum=vac)
+ion.set_cell(cell)
+ion.center()
 ion.get_potential_energy()
 
 calc.set(xc=beef)
@@ -120,7 +120,8 @@ ion = Atoms(sym)
 ion.extend(shell)
 calc.set(xc=xc)
 ion.calc = calc
-ion.center(vacuum=vac)
+ion.set_cell(cell)
+ion.center()
 ion.get_potential_energy()
 
 calc.set(xc=beef)
@@ -139,24 +140,24 @@ ion.calc=scalc
 E_cluster_sol = ion.get_potential_energy()
 ense = BEEFEnsemble(scalc)
 dE_cluster_sol = ense.get_ensemble_energies()
-
+'''
 #Calculate solvation energy according to thermodynamic cycle
 Gsolsv = E_sv_sol - E_sv
-Gclust = E_cluster - E_ion - 4*E_sv
-Gsolcluster = E_cluster_sol - E_cluster
-Gsol = Gsolcluster+Gclust - 4*Gsolsv-4*R*T*math.log(nd)
+#Gclust = E_cluster - E_ion - 4*E_sv
+#Gsolcluster = E_cluster_sol - E_cluster
+#Gsol = Gsolcluster+Gclust - 4*Gsolsv-4*R*T*math.log(nd)
 
 
 dGsolsv = dE_sv_sol[:] - dE_sv[:]
-dGclust = dE_cluster[:] - dE_ion[:] - 4*dE_sv[:]
-dGsolcluster = dE_cluster_sol[:] - dE_cluster[:]
-dGsol = dGsolcluster[:]+dGclust[:] - 4*dGsolsv[:]
+#dGclust = dE_cluster[:] - dE_ion[:] - 4*dE_sv[:]
+#dGsolcluster = dE_cluster_sol[:] - dE_cluster[:]
+#dGsol = dGsolcluster[:]+dGclust[:] - 4*dGsolsv[:]
 
-parprint ("Gsol({}) = {:.6f} + {:.6f}".format(s,Gsol,dGsol.var()))
+#parprint ("Gsol({}) = {:.6f} + {:.6f}".format(s,Gsol,dGsol.var()))
+parprint ("Gsv({}) = {:.6f} + {:.6f}".format(s,Gsolsv,dGsolsv.var()))
 
-output[s] = (Gsol,dGsol)
+#output[s] = (Gsol,dGsol)
 
 #Open pickle file for output dictionary and dump
-f = paropen("BEEF_{}_{}.pkl".format(s,sv),mode='w')
-pickle.dump(output,f)
-'''
+#f = paropen("BEEF_{}_{}.pkl".format(s,sv),mode='w')
+#pickle.dump(output,f)
